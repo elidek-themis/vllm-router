@@ -1,0 +1,12 @@
+[project]
+name = "vllm-router"
+authors = [
+  {name = "Christos Karanikolopoulos", email = "chkaranikolopoulos@cs.uoi.gr"},
+]
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "vllm>=0.10.1.1",
+]
