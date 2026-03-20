@@ -1,9 +1,9 @@
 from logging import getLogger
 
-from model import VLLMModel
-from utils import Request, requests
+from model import VLLMModel, VLLMModelList
+from utils import HTTP_OK, Request, requests
 
-logger = getLogger(__name__)
+logger = getLogger("uvicorn")
 
 
 class Router:
@@ -11,23 +11,41 @@ class Router:
     PORT_RANGE = range(8001, 8011)
 
     def __init__(self) -> None:
+        self.model_map: dict[str, VLLMModel] = {}
         self.refresh()
+
+    @property
+    def models(self) -> VLLMModelList:
+        return VLLMModelList(data=list(self.model_map.values()))
+
+    @property
+    def model_ids(self):
+        return [model.id for model in self.models.data]
 
     def refresh(self) -> None:
         self.model_map = self._discover()
 
+    def model_exists(self, model_name: str) -> bool:
+        return model_name in self.model_map
+
+    def get_model_port(self, model_name: str) -> int:
+        return self.model_map[model_name].port
+
     def _discover(self) -> dict[str, VLLMModel]:
         model_map = {}
+
         for port in self.PORT_RANGE:
-            if self._hearts_alive(port):
+            if not self._get_health(port):
+                continue
+
+            try:
                 model_data = self._get_model_data(port=port)
-                is_sleeping = self._get_status(port)
-                try:
-                    model = VLLMModel(**model_data, port=port, is_sleeping=is_sleeping)
-                except (TypeError, ValueError) as e:
-                    logger.info(f"port {port}: {e}")
-                    continue
-                model_map[model.root] = model
+                model = VLLMModel(**model_data, port=port)
+                model_map[model.id] = model
+                logger.info(f"Discovered: {model.id} on port {port}")
+            except (TypeError, ValueError) as e:
+                logger.warning(f"Port {port}: Invalid model data - {e}")
+                continue
 
         return model_map
 
@@ -40,30 +58,10 @@ class Router:
 
         return model_data
 
-    def _get_status(self, port: int):
-        r = Request.status(port=port)
-        j = r.json()
-
-        return j.get("is_sleeping", False)
-
-    def _hearts_alive(self, port: int) -> bool:
+    def _get_health(self, port: int) -> bool:
         try:
             r = Request.health(port)
             r.raise_for_status()
-            return r.status_code == 200  # noqa: PLR2004
+            return r.status_code == HTTP_OK
         except requests.RequestException:
             return False
-
-    def model_exists(self, model_name: str) -> bool:
-        return model_name in self.model_map
-
-    def get_model_port(self, model_name: str) -> int:
-        return self.model_map[model_name].port
-
-    @property
-    def models(self):
-        return list(self.model_map.values())
-
-    @property
-    def model_ids(self):
-        return [model.root for model in self.models]
