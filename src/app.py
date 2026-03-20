@@ -10,6 +10,7 @@ import uvicorn
 
 from fastapi import FastAPI, Request, Response, HTTPException
 
+from model import VLLMModelList
 from router import Router
 
 logging.basicConfig(level=logging.INFO)
@@ -63,9 +64,15 @@ async def root():
     return {"message": "vLLM Router", "active_servers": len(router.model_map)}
 
 
-@app.get("/v1/models")
+@app.get("/health")
+async def health():
+    router.refresh()
+    return {"status": "ok", "active_servers": len(router.model_map)}
+
+
+@app.get("/v1/models", response_model=VLLMModelList)
 async def list_models():
-    return {"object": "list", "data": router.models}
+    return router.models
 
 
 @app.post("/refresh")
@@ -77,7 +84,6 @@ async def manual_refresh():
 @app.api_route("/{path:path}", methods=["GET", "POST", "HEAD"])
 async def proxy_to_vllm(path: str, request: Request):
     """Forward request to the correct vLLM server based on model name."""
-
     if not router.model_map:
         raise HTTPException(status_code=503, detail="No vLLM servers available")
 
@@ -132,7 +138,7 @@ def setup_parser() -> argparse.ArgumentParser:
     return parser
 
 
-if __name__ == "__main__":
+def __main__():
     parser = setup_parser()
     args = parser.parse_args()
 
@@ -140,3 +146,7 @@ if __name__ == "__main__":
     Router.PORT_RANGE = range(args.vllm_port_start, args.vllm_port_end + 1)
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+
+
+if __name__ == "__main__":
+    __main__()
